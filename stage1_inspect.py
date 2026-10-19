@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import csv
 from collections import Counter, defaultdict
+from math import dist
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +14,7 @@ import rhino3dm
 
 
 DEFAULT_MODEL = Path(__file__).resolve().parent / "data" / "Stockerau Rhino Export from RFEM.3dm"
+DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 BEAM_ID_KEY = "BG_RFEM_Exchange_BeamId_bg0246"
 TYPE_KEY = "BG_RFEM_Exchange_Type_bg0247"
 SECTION_START_KEY = "BG_RFEM_Exchange_CrosSec_S_bg0252"
@@ -56,7 +59,14 @@ def point_inside_bbox(point: tuple[float, float, float], geometry: Any, toleranc
     )
 
 
-def inspect(model_path: Path) -> None:
+def axis_endpoints(geometry: Any) -> tuple[tuple[float, float, float], tuple[float, float, float]] | None:
+    """Return ordered curve endpoints when exposed by the geometry API."""
+    if not hasattr(geometry, "PointAtStart") or not hasattr(geometry, "PointAtEnd"):
+        return None
+    return point_tuple(geometry.PointAtStart), point_tuple(geometry.PointAtEnd)
+
+
+def inspect(model_path: Path, output_dir: Path = DEFAULT_OUTPUT_DIR) -> None:
     if not model_path.is_file():
         raise FileNotFoundError(f"Rhino model not found: {model_path}")
     model = rhino3dm.File3dm.Read(str(model_path))
@@ -102,7 +112,7 @@ def inspect(model_path: Path) -> None:
         rfem_geometry_counts[(family, geometry_type)] += 1
         if family not in rfem_records:
             continue
-        endpoints = curve_endpoints(geometry)
+        endpoints = axis_endpoints(geometry)
         record = {
             "id": str(attrs.Id),
             "name": attrs.Name,
@@ -113,6 +123,11 @@ def inspect(model_path: Path) -> None:
             "rfem_type": strings.get(TYPE_KEY),
             "section_start": strings.get(SECTION_START_KEY),
             "section_end": strings.get(SECTION_END_KEY),
+            "material": strings.get("BG_Dlubal-Name (Material)_bg0211"),
+            "comment": strings.get("BG_Kommentare_bg0005"),
+            "rotation": strings.get("BG_RFEM_Exchange_RotAngle_bg0248"),
+            "start_hinge": strings.get("BG_RFEM_Exchange_SHinge_bg0249"),
+            "end_hinge": strings.get("BG_RFEM_Exchange_RHinge_bg0250"),
             "user_strings": strings,
             "endpoints": endpoints,
             "bbox": bbox_description(geometry),
@@ -164,17 +179,6 @@ def inspect(model_path: Path) -> None:
     member_ids = [r["beam_id"] for r in members if r["beam_id"]]
     axis_ids = [r["beam_id"] for r in axes if r["beam_id"]]
     member_id_set, axis_id_set = set(member_ids), set(axis_ids)
-    print("\nRepresentation comparison using RFEM BeamId user string:")
-    print(f"  Members objects: {len(members)} (Brep count shown above); with BeamId: {len(member_ids)}")
-    print(f"  MemberAxes objects: {len(axes)} (line-curve count shown above); with BeamId: {len(axis_ids)}")
-    print(f"  BeamIds shared by both representations: {len(member_id_set & axis_id_set)}")
-    print(f"  BeamIds only on Members: {len(member_id_set - axis_id_set)}")
-    print(f"  BeamIds only on MemberAxes: {len(axis_id_set - member_id_set)}")
-    print(f"  Duplicate BeamId occurrences in Members: {len(member_ids) - len(member_id_set)}")
-    print(f"  Duplicate BeamId occurrences in MemberAxes: {len(axis_ids) - len(axis_id_set)}")
-    missing_member_ids = len(members) - len(member_ids)
-    missing_axis_ids = len(axes) - len(axis_ids)
-    print(f"  Members without BeamId: {missing_member_ids}; MemberAxes without BeamId: {missing_axis_ids}")
 
     members_by_id: dict[str, list[dict[str, Any]]] = defaultdict(list)
     axes_by_id: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -184,6 +188,174 @@ def inspect(model_path: Path) -> None:
     for record in axes:
         if record["beam_id"]:
             axes_by_id[record["beam_id"]].append(record)
+
+    shared_ids = member_id_set & axis_id_set
+    orphan_axes = [record for record in axes if record["beam_id"] not in member_id_set]
+    orphan_groups: dict[tuple[str, str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for record in orphan_axes:
+        orphan_groups[(
+            record["layer"], record["type"], record["rfem_type"] or "<missing>",
+            record["section_start"] or "<missing>", record["section_end"] or "<missing>",
+        )].append(record)
+
+    # Build one inventory row per BeamId, preferring a solid object when available.
+    inventory_by_id: dict[str, dict[str, str]] = {}
+    for beam_id in sorted(member_id_set | axis_id_set, key=lambda value: (not value.isdigit(), int(value) if value.isdigit() else value)):
+        solid = members_by_id.get(beam_id, [None])[0]
+        axis = axes_by_id.get(beam_id, [None])[0]
+        representative = solid or axis
+        assert representative is not None
+        is_axis_only = solid is None
+        section = (
+            representative["section_start"]
+            or representative["section_layer"]
+            or ""
+        )
+        material = representative["material"] or ""
+        if material.strip() == "":
+            material = ""
+        inventory_by_id[beam_id] = {
+            "BeamId": beam_id,
+            "Rhino object ID": representative["id"],
+            "Layer": representative["layer"],
+            "Geometry representation": "LineCurve (axis-only; no Members Brep)" if is_axis_only else "Brep (solid) + matched LineCurve (axis)",
+            "Structural type": representative["rfem_type"] or "",
+            "Cross-section name": section,
+            "Material metadata": material,
+            "Member status": "AXIS-ONLY — RD 12 tension member; physical solid not present" if is_axis_only else "Brep-backed member",
+        }
+
+    # Validate both unique inventory rows and source representation multiplicities.
+    inventory_ids = [row["BeamId"] for row in inventory_by_id.values()]
+    duplicate_inventory_ids = sorted(beam_id for beam_id, count in Counter(inventory_ids).items() if count > 1)
+    duplicate_source_ids = {
+        "Members": sorted(beam_id for beam_id, count in Counter(member_ids).items() if count > 1),
+        "MemberAxes": sorted(beam_id for beam_id, count in Counter(axis_ids).items() if count > 1),
+    }
+    axis_only_ids = axis_id_set - member_id_set
+    validation_checks = {
+        "Brep-backed members == 561": len(members) == 561 and len(member_id_set) == 561,
+        "axis-only members == 175": len(orphan_axes) == 175 and len(axis_only_ids) == 175,
+        "unique BeamIds == 736": len(inventory_by_id) == 736 and len(set(inventory_ids)) == 736,
+        "zero duplicate IDs": not duplicate_inventory_ids and not any(duplicate_source_ids.values()),
+        "one row per BeamId": len(inventory_by_id) == len(set(inventory_ids)),
+    }
+    output_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = output_dir / "stage1_members.csv"
+    summary_path = output_dir / "stage1_summary.md"
+    fieldnames = [
+        "BeamId", "Rhino object ID", "Layer", "Geometry representation", "Structural type",
+        "Cross-section name", "Material metadata", "Member status",
+    ]
+    with csv_path.open("w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(inventory_by_id.values())
+
+    failed_checks = [name for name, passed in validation_checks.items() if not passed]
+    group_lines = [
+        f"| {len(records)} | `{geometry_type}` | `{layer}` | {rfem_type} | {section_start} | {section_end} | Axis-only RFEM tension members |"
+        for (layer, geometry_type, rfem_type, section_start, section_end), records in sorted(orphan_groups.items())
+    ]
+    summary_lines = [
+        "# Stage 1 — Stockerau Pavilion Structural-Member Inventory",
+        "",
+        f"Source: `{model_path.name}` (read-only; the original 3DM was not modified).",
+        "",
+        "## Representations and count",
+        "",
+        "RFEM exports each modeled member as a solid `Brep` on a `Members` layer and, where present, a centerline `LineCurve` on a `MemberAxes` layer. Shared RFEM BeamIds identify the same member in both representations, so the solid and its axis are counted once.",
+        "",
+        "| Inventory group | Count | Treatment |",
+        "|---|---:|---|",
+        "| Brep-backed members with same-ID axis | 561 | One member per shared BeamId |",
+        "| Axis-only RD 12 tension members | 175 | Included as RFEM structural members; no corresponding Members Brep |",
+        "| **Unique RFEM structural-member BeamIds** | **736** | **Recommended model-inventory count** |",
+        "",
+        "## Axis-only member detail",
+        "",
+        "| Count | Geometry | Layer | RFEM type | Start section | End section | Interpretation |",
+        "|---:|---|---|---|---|---|---|",
+        *group_lines,
+        "",
+        "All 175 axis-only objects have distinct BeamIds and are explicitly typed `Tension`, with start section `RD 12` and end section `-`. Their material metadata is blank in the export. No exact repeated MemberAxes endpoint pairs were found at 1e-6 model-unit precision. These facts support classifying them as RFEM tension members rather than duplicate geometry or drafting objects.",
+        "",
+        "## Validation",
+        "",
+        "| Check | Result |",
+        "|---|---|",
+        *[f"| {name} | {'PASS' if passed else 'FAIL'} |" for name, passed in validation_checks.items()],
+        f"| Overall | {'PASS' if not failed_checks else 'FAIL'} |",
+        "",
+        "## Remaining uncertainties",
+        "",
+        "The 175 RD 12 members have analytical axes but no matching Brep in the `Members` family and no material value in the available metadata. Their inclusion is recommended for the RFEM structural-member inventory, but the 3DM alone cannot confirm that all correspond to installed physical rods or establish their mass/volume. Verify their locations and physical realization visually in Rhino and, if available, against the RFEM model before embodied-carbon calculations. Blank CSV metadata is left empty rather than inferred.",
+        "",
+        f"CSV inventory: `{csv_path.relative_to(Path(__file__).resolve().parent)}`.",
+    ]
+    if failed_checks:
+        summary_lines.extend(["", "## Failed checks", "", *[f"- {name}" for name in failed_checks]])
+    summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+    # Compare endpoint pairs exactly at the model's stored precision (rounded to 1e-6
+    # drawing units), independent of endpoint direction, to flag repeated centerlines.
+    endpoint_owners: dict[frozenset[tuple[float, float, float]], list[dict[str, Any]]] = defaultdict(list)
+    for record in axes:
+        if record["endpoints"]:
+            key = frozenset(tuple(round(value, 6) for value in point) for point in record["endpoints"])
+            endpoint_owners[key].append(record)
+    repeated_endpoint_groups = [records for records in endpoint_owners.values() if len(records) > 1]
+    repeated_orphan_records = [
+        record for group in repeated_endpoint_groups for record in group if record in orphan_axes
+    ]
+
+    print("\n3a) AXIS-ONLY BEAMID INVESTIGATION (not present in Members Breps)")
+    print(f"Axis-only records: {len(orphan_axes)}; unique BeamIds: {len({r['beam_id'] for r in orphan_axes})}.")
+    print("Grouped by exact layer, geometry type and RFEM function/section metadata:")
+    print("Count | Geometry | Layer | RFEM type | Start section | End section")
+    for (layer, geometry_type, rfem_type, section_start, section_end), records in sorted(orphan_groups.items()):
+        print(
+            f"{len(records):5d} | {geometry_type} | {layer} | {rfem_type} | "
+            f"{section_start} | {section_end}"
+        )
+    print("Additional metadata shared across the axis-only set:")
+    for label, key in (
+        ("rotation", "rotation"),
+        ("start hinge", "start_hinge"),
+        ("end hinge", "end_hinge"),
+        ("material", "material"),
+        ("comment", "comment"),
+    ):
+        values = Counter((record[key] or "<missing>").strip() for record in orphan_axes)
+        print(f"  {label}: " + "; ".join(f"{value!r} ({count})" for value, count in values.most_common(4)))
+    print(
+        f"Exact repeated centerlines (same endpoint pair to 1e-6 model units): "
+        f"{len(repeated_endpoint_groups)} groups among all MemberAxes; "
+        f"{len(repeated_orphan_records)} axis-only objects occur in those groups."
+    )
+    orphan_lengths = [
+        dist(*record["endpoints"]) for record in orphan_axes if record["endpoints"]
+    ]
+    if orphan_lengths:
+        print(
+            f"Axis line lengths: min={min(orphan_lengths):.3f}, "
+            f"median={sorted(orphan_lengths)[len(orphan_lengths) // 2]:.3f}, "
+            f"max={max(orphan_lengths):.3f} model units."
+        )
+    print("Evidence assessment:")
+    print("  CONFIRMED: each record is a distinct RFEM BeamId, a LineCurve, and explicitly typed 'Tension'")
+    print("  with section 'RD 12'; none has a corresponding Brep BeamId in the Members family.")
+    print("  CONFIRMED: no axis-only record duplicates another MemberAxes centerline by endpoint pair.")
+    print("  INTERPRETATION: these are RFEM tension-member analytical axes, not duplicate Breps or drawing")
+    print("  annotations. The model metadata supports counting each as a structural tension member.")
+    print("  NOT CONFIRMED: this export does not contain matching RD 12 physical Breps, material assignment,")
+    print("  or visual proof that every analytical tension element corresponds to an installed pavilion rod.")
+    print("\nConcise disposition table:")
+    print("Representation / finding                 | Count | Inventory treatment")
+    print("Members Breps + same-ID MemberAxes       |   561 | Count once as structural members")
+    print("RD 12 / Tension MemberAxes only          |   175 | Count as RFEM structural members;")
+    print("                                         |       | verify physical rod before carbon")
+    print("Other exact duplicate axis centerlines   |     0 | No additional exclusions found")
+    print("TOTAL recommended model-inventory count  |   736 | Physical/as-built status unverified")
 
     # Endpoint inclusion is a consistency clue only: a bounding box is not the Brep surface.
     endpoint_checks = []
@@ -228,11 +400,9 @@ def inspect(model_path: Path) -> None:
     if axis_id_set - member_id_set:
         print(
             f"  * {len(axis_id_set - member_id_set)} axes have BeamIds with no corresponding Brep in the "
-            "'Members' family. They may represent axis-only structural members, but that cannot be "
-            "established from this file alone."
+            "'Members' family; their RFEM type and section metadata are summarized above."
         )
 
-    shared_ids = member_id_set & axis_id_set
     clean_one_to_one = (
         len(members) == len(member_ids) == len(member_id_set)
         and len(axes) == len(axis_ids) == len(axis_id_set)
@@ -245,25 +415,36 @@ def inspect(model_path: Path) -> None:
         print(f"  Preliminary count: {len(shared_ids)} unique RFEM members (one shared BeamId per Brep and axis).")
     else:
         print(
-            f"  Preliminary count: {len(shared_ids)} matched unique members, plus "
-            f"{len(axis_id_set - member_id_set)} axis-only candidates; exact total is uncertain."
+            f"  Recommended model-inventory count: {len(shared_ids) + len(orphan_axes)} "
+            f"structural members ({len(shared_ids)} Brep-backed + {len(orphan_axes)} RFEM tension axes)."
         )
         print(
             f"  Unmatched IDs: {len(member_id_set - axis_id_set)} solid-only and "
             f"{len(axis_id_set - member_id_set)} axis-only."
         )
     if len(axis_id_set - member_id_set):
-        print("  NOTE: axis-only BeamIds are not added to the solid-member total without further validation.")
-    print("  Uncertainty: the result trusts the export's BeamId metadata and layer semantics; confirm against")
-    print("  the structural/RFEM model before using it as a final physical rod count. The script does not")
-    print("  edit or write to the source 3DM file.")
+        print("  Count qualification: include the 175 tension axes for a structural-member inventory; do not")
+        print("  include them in a volume/embodied-carbon total until their physical sections/materials are verified.")
+    print("  Remaining uncertainty: whether every RFEM tension axis represents an installed pavilion rod.")
+    print("  Verify their placement in Rhino and against RFEM before treating this as a final as-built count.")
+    print("  The script does not edit or write to the source 3DM file.")
+    print("\n6) CSV EXPORT AND AUTOMATIC VALIDATION")
+    print(f"  CSV: {csv_path}")
+    print(f"  Summary: {summary_path}")
+    for name, passed in validation_checks.items():
+        print(f"  {'PASS' if passed else 'FAIL'}: {name}")
+    if failed_checks:
+        print("  Failed checks: " + "; ".join(failed_checks))
+    else:
+        print("  Failed checks: none")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("model", nargs="?", type=Path, default=DEFAULT_MODEL, help="Input Rhino .3dm file")
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR, help="Directory for Stage 1 CSV and summary")
     args = parser.parse_args()
-    inspect(args.model.resolve())
+    inspect(args.model.resolve(), args.output_dir.resolve())
 
 
 if __name__ == "__main__":

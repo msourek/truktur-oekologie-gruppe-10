@@ -18,8 +18,9 @@ One entry per stage. Short is fine. The log is part of the submission and the ba
 
 **Test:** Wie viele Stäbe hat der Pavillon? Prüft die Zahl am Modell nach.
 
+**Ergebnis:** 736 eindeutige RFEM-BeamIds im Modellinventar: 561 Stäbe mit Brep und zugehöriger Achse sowie 175 axis-only Zugstäbe (RD 12). Automatische CSV-Prüfungen: alle bestanden; keine doppelten IDs.
 
-**Learning oder Besonderheit:**
+**Learning oder Besonderheit:** Analytische Achsen und 3D-Körper dürfen nicht doppelt gezählt werden. Die 175 RD-12-Achsen haben keine zugeordneten Körper oder Materialangaben und müssen vor einer CO₂-Berechnung visuell bzw. im RFEM-Modell geprüft werden.
 
 
 ## Etappe 2: Querschnitte verstehen
