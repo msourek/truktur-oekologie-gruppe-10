@@ -1,0 +1,24 @@
+Member Category,Profile / Type,Count,Details
+Beam,Flat Bar 275/12,35,Horizontal beam
+Beam,Flat Bar 175/12,35,Horizontal beam
+Beam,Flat Bar 225/12,35,Horizontal beam
+Beam,Flat Bar 275/20,23,Horizontal beam
+Beam,Flat Bar 175/20,23,Horizontal beam
+Beam,Flat Bar 225/20,23,Horizontal beam
+Beam,TOTAL,174,All horizontal beams
+Column,RO 139.7x8.0 | EN 10210-2:2006,12,Vertical column
+Column,TOTAL,12,All vertical columns
+Other / diagonal / bracing,Flat Bar 33.3/20,116,Diagonal/bracing member
+Other / diagonal / bracing,Rectangle 500/500,47,Diagonal/bracing member
+Other / diagonal / bracing,Flat Bar 275/12,35,Diagonal/bracing member
+Other / diagonal / bracing,Flat Bar 162.5/12,35,Diagonal/bracing member
+Other / diagonal / bracing,Flat Bar 200/12,35,Diagonal/bracing member
+Other / diagonal / bracing,Flat Bar 237.5/12,35,Diagonal/bracing member
+Other / diagonal / bracing,Flat Bar 275/20,18,Diagonal/bracing member
+Other / diagonal / bracing,Flat Bar 162.5/20,18,Diagonal/bracing member
+Other / diagonal / bracing,Flat Bar 237.5/20,18,Diagonal/bracing member
+Other / diagonal / bracing,Flat Bar 200/20,18,Diagonal/bracing member
+Other / diagonal / bracing,TOTAL,375,All other/diagonal members
+Bracing rod (curve-only),RD 12,175,"Centerline only, no solid Brep"
+Bracing rod (curve-only),TOTAL,175,RD 12 curves only
+GRAND TOTAL,All unique members,736,561 Breps + 175 RD 12 curves

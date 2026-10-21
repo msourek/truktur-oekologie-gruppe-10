@@ -1,0 +1,101 @@
+=== Member count analysis (no double-counting) ===
+Source file: Stockerau Rhino Export from RFEM.3dm
+
+=== Two representations found ===
+1) Members (solid Brep representation, layers 118-136): 561 objects
+2) MemberAxes (centerline Curve representation, layers 138-157): 736 objects
+
+=== Profile counts: Brep vs Curve (should match per profile) ===
+  Flat Bar 162.5/12                             Brep=  35  Curve=  35
+  Flat Bar 162.5/20                             Brep=  18  Curve=  18
+  Flat Bar 175/12                               Brep=  35  Curve=  35
+  Flat Bar 175/20                               Brep=  23  Curve=  23
+  Flat Bar 200/12                               Brep=  35  Curve=  35
+  Flat Bar 200/20                               Brep=  18  Curve=  18
+  Flat Bar 225/12                               Brep=  35  Curve=  35
+  Flat Bar 225/20                               Brep=  23  Curve=  23
+  Flat Bar 237.5/12                             Brep=  35  Curve=  35
+  Flat Bar 237.5/20                             Brep=  18  Curve=  18
+  Flat Bar 275/12                               Brep=  70  Curve=  70
+  Flat Bar 275/20                               Brep=  41  Curve=  41
+  Flat Bar 33.3/20                              Brep= 116  Curve= 116
+  RD 12                                         Brep=   0  Curve= 175
+  RO 139.7x8.0 | EN 10210-2:2006                Brep=  12  Curve=  12
+  Rectangle 500/500                             Brep=  47  Curve=  47
+  TOTAL                                         Brep= 561  Curve= 736
+
+=== RD 12 bracing rods (curves only, no Brep) ===
+  RD 12 curves: 175
+
+=== Member totals (no double-counting) ===
+  Total unique members (Brep members + RD12 curves): 736
+    - Beams (horizontal): 174
+    - Columns (vertical): 12
+    - Other / diagonal / bracing: 375
+    - RD 12 (curve-only, bracing rods): 175
+
+=== Beams breakdown by profile ===
+  Flat Bar 275/12                               35
+  Flat Bar 175/12                               35
+  Flat Bar 225/12                               35
+  Flat Bar 275/20                               23
+  Flat Bar 175/20                               23
+  Flat Bar 225/20                               23
+
+=== Columns breakdown by profile ===
+  RO 139.7x8.0 | EN 10210-2:2006                12
+
+=== Other / diagonal breakdown by profile ===
+  Flat Bar 33.3/20                              116
+  Rectangle 500/500                             47
+  Flat Bar 275/12                               35
+  Flat Bar 162.5/12                             35
+  Flat Bar 200/12                               35
+  Flat Bar 237.5/12                             35
+  Flat Bar 275/20                               18
+  Flat Bar 162.5/20                             18
+  Flat Bar 237.5/20                             18
+  Flat Bar 200/20                               18
+
+=== Per-layer Brep counts (Members representation) ===
+  [118] Flat Bar 275/12: 70
+  [119] Flat Bar 275/20: 41
+  [120] Flat Bar 162.5/12: 35
+  [121] Flat Bar 12/200: 0
+  [122] Flat Bar 20/200: 0
+  [123] RO 139.7x8.0 | EN 10210-2:2006: 12
+  [124] Flat Bar 162.5/20: 18
+  [125] Flat Bar 175/20: 23
+  [126] Flat Bar 175/12: 35
+  [127] Rectangle 500/500: 47
+  [128] Flat Bar 225/20: 23
+  [129] Flat Bar 225/12: 35
+  [130] Flat Bar 237.5/20: 18
+  [131] Flat Bar 200/20: 18
+  [132] Flat Bar 200/12: 35
+  [133] Flat Bar 237.5/12: 35
+  [134] Flat Bar 33.3/20: 116
+  [135] Flat Bar 24/200: 0
+  [136] Flat Bar 20/33.3: 0
+
+=== Per-layer Curve counts (MemberAxes representation) ===
+  [138] Flat Bar 275/12: 70
+  [139] RD 12: 175
+  [140] Flat Bar 275/20: 41
+  [141] Flat Bar 162.5/12: 35
+  [142] Flat Bar 12/200: 0
+  [143] Flat Bar 20/200: 0
+  [144] RO 139.7x8.0 | EN 10210-2:2006: 12
+  [145] Flat Bar 162.5/20: 18
+  [146] Flat Bar 175/20: 23
+  [147] Flat Bar 175/12: 35
+  [148] Rectangle 500/500: 47
+  [149] Flat Bar 225/20: 23
+  [150] Flat Bar 225/12: 35
+  [151] Flat Bar 237.5/20: 18
+  [152] Flat Bar 200/20: 18
+  [153] Flat Bar 200/12: 35
+  [154] Flat Bar 237.5/12: 35
+  [155] Flat Bar 33.3/20: 116
+  [156] Flat Bar 24/200: 0
+  [157] Flat Bar 20/33.3: 0
