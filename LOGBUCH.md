@@ -44,12 +44,17 @@ Furthermore, we have learned that it is important to provide the AI ​​with t
 **Key Insight or Special Feature:** We have come to realize that AI sometimes makes mistakes, so we must verify the results rather than relying on them blindly. Furthermore, at this stage, we have determined the volume of each structural element, which will assist us in calculating CO2 emissions.
 
 
-## Etappe 3: Material zuordnen
+## Stage 3: Assigning Materials
 
-**Test:** Sind die Materialangaben, die schon im Modell stehen, plausibel? Zeigt an einem Stab, wie ihr das geprüft habt.
+**Test:** Are the material specifications already present in the model plausible? Demonstrate how you verified this, using one of the structural members as an example.
 
+**Prompt:** Assign the best material for each member according to the rules that determine the material to choose depending on the structural function of the member and its dimmensions (cross section, length and volume), justifying it. There are members that already have a material assigned in the Rhinoceros file (you can find the data in the attribute user text of each member), evaluate them and tell if they are appropriate or you recommend to change them explaining the reasons.
 
-**Learning oder Besonderheit:**
+**Result:** After reviewing the materials assigned to the differentmembers by the AI ​​model and those already assigned in Rhinoceros, the following decisions have been made: the columns will be made of S355 steel; the flat beams will be made of steel (even in cases where concrete had been assigned as material in rhinoceros); the Rectangle 500/500 members will be made of C25/30 concrete; and the bracing rods (tensors) will be made of steel.
+
+**What we have checked ourselves:** We have decided to retain steel for the circular hollow sections, given their slender, hollow, and circular profile. Furthermore, although some of the flat beams were assigned concrete as a material in Rhinoceros, we have determined that steel is a better choice, since this way they can be securely tied to one another, a conclusion that aligns with the selection made by the AI ​​model. Regarding both the bracing rods and the Rectangle 500/500 members, we concur with the materials selected by the AI ​​model.
+
+**Insight or Notable Detail:** The data obtained in this stage, together with the volumes calculated in previous stage, will allow us to provide data to the IA agent to estimate the CO2 emissions
 
 
 ## Etappe 4: Embodied Carbon aus der ÖKOBAUDAT

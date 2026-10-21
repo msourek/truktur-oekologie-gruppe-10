@@ -1,0 +1,4 @@
+Structural_Function,Count,Recommended_Material,Dlubal_Materials_Found,Total_Volume_m3,Total_Length_m
+Beam,502,B+G steel, ; Concrete C25/30,0.6857,247.43
+Bracing Rod (Tension),175,B+G steel, ,0.0,366.06
+Column,59,B+G concrete-02; B+G steel, ; Steel S 355,12.3522,88.84
