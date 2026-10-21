@@ -27,12 +27,21 @@ It involved setting up the work environment in Visual Studio Code, as well as cr
 Furthermore, we have learned that it is important to provide the AI ​​with the right guidance to ensure it performs its task correctly, for example, by instructing it not to double-count elements that appear represented twice (in both 3D and 2D). This stage has been important to obtain information about the stuctural members that we have to consider to calculate the CO2 emisions.
 
 
-## Etappe 2: Querschnitte verstehen
+## Stage 2: Understanding Cross-Sections
 
-**Test:** Rechnet einen Stab, dessen Querschnitt sich über die Länge ändert, von Hand nach und vergleicht mit eurem Programm.
+**Test:** Perform a manual calculation for a structural member whose cross-section varies along its length, and compare the result with your program’s output.
 
+**Prompt 1:** I need you calculate the cross-sectional area and volume for each type of member you have obtained before. Put the results for each type of member  in a unique csv file in the "output" folder and also create a python file to create that csv file.
 
-**Learning oder Besonderheit:**
+**What went wrong?:** After manually verifying the results using Rhinoceros, we realized that the volume calculation was incorrect, even though the cross-sectional area had been calculated correctly.
+
+**Prompt 2:** the results are not correct, recalculate again the cross-sectional area and the volume of each member in cubic meters analyzing the rhino file to check the coherence of the results.
+
+**Result:** This time, we have obtained the correct measurement results (cross-section and volume in m³) for each of the members. As an example, we provide the data obtained for one member: Flat Bar 237.5/12,  133 (Layer index),0.439942 (Lenght (m)),0.00101944 (Volume (m^3)),0.00231722 (Cross-Sectional Area (m^2)),2317.22 (Cross-Sectional Area (mm^2)),0.18454 (Surface Area (m^2)),True (Is Solid)
+
+**What we have checked ourselves:** In Rhinoceros, we selected the member "Flat Bar 237.5/12", whose cross-section varies along its length, and using the "volume" command we verified that the results obtained were correct.
+
+**Key Insight or Special Feature:** We have come to realize that AI sometimes makes mistakes, so we must verify the results rather than relying on them blindly. Furthermore, at this stage, we have determined the volume of each structural element, which will assist us in calculating CO2 emissions.
 
 
 ## Etappe 3: Material zuordnen
