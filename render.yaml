@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: stockerau-carbon-explorer
+    runtime: python
+    plan: free
+    buildCommand: bash stage5_app/render_build.sh
+    startCommand: bash stage5_app/render_start.sh
+    healthCheckPath: /health
+    autoDeploy: false
+    envVars:
+      - key: RENDER_INCLUDE_RHINO_MODEL
+        value: "1"
+      - key: STOCKERAU_ALLOW_GEOMETRY_ONLY
+        value: "1"

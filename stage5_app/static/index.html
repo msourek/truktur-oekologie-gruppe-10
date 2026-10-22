@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stockerau — Carbon Explorer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Stockerau Carbon Explorer home"><span class="brand-mark">S</span><span>STOCKERAU <i>/</i> CARBON EXPLORER</span></a>
+    <div class="top-meta"><span class="live-dot"></span><span id="api-status">CONNECTING TO ÖKOBAUDAT</span><span class="top-divider"></span><span>INNSBRUCK · STAGE 05</span></div>
+  </header>
+
+  <main class="layout">
+    <section class="hero">
+      <div><p class="eyebrow">PAVILION · EMBODIED CARBON</p><h1>See the impact<br><em>in every member.</em></h1></div>
+      <p class="hero-note">An interactive carbon inventory of the Stockerau pavilion structure, connected to live ÖKOBAUDAT environmental data.</p>
+    </section>
+
+    <section class="toolbar card">
+      <div class="control-group"><label>STEEL DATASET</label><div class="segmented"><button class="seg active" data-switch="steel" data-value="default">DEFAULT</button><button class="seg" data-switch="steel" data-value="alternative">ALTERNATIVE</button></div></div>
+      <div class="control-group"><label>CONCRETE DATASET</label><div class="segmented"><button class="seg active" data-switch="concrete" data-value="default">DEFAULT</button><button class="seg" data-switch="concrete" data-value="alternative">ECOPACT</button></div></div>
+      <div class="control-group"><label>LIFE-CYCLE MODULE</label><div class="segmented modules"><button class="seg active" data-module="A1-A3">A1–A3</button><button class="seg" data-module="C">C</button><button class="seg" data-module="D">D</button></div></div>
+      <button class="icon-button" id="refresh" title="Refresh ÖKOBAUDAT data"><span>↻</span><small>REFRESH DATA</small></button>
+    </section>
+
+    <section class="dashboard-grid">
+      <div class="model-panel card">
+        <div class="panel-heading"><div><p class="eyebrow">STRUCTURAL MODEL</p><h2>Carbon distribution</h2></div><div class="model-actions"><button id="fit-view" class="mini-button">FIT MODEL</button><button id="reset-view" class="mini-button">RESET</button></div></div>
+        <div class="canvas-wrap" id="canvas-wrap"><canvas id="model-canvas"></canvas><div class="canvas-label">RHINO Z-UP · RIGHT-DRAG ORBIT <span>·</span> SHIFT + RIGHT-DRAG PAN <span>·</span> WHEEL ZOOM <span>·</span> ⌘ + RIGHT-DRAG ZOOM <span>·</span> CLICK SELECT</div><div id="tooltip" class="tooltip hidden"></div><div id="loading" class="loading">Loading Rhino model…</div></div>
+        <div class="legend-row"><div class="legend-title">KG CO₂e / MEMBER</div><div class="gradient"><span>LOW</span><div class="gradient-bar"></div><span>HIGH</span></div><span id="model-count" class="model-count">— MEMBERS</span></div>
+      </div>
+
+      <aside class="sidebar">
+        <div class="total-card card"><p class="eyebrow">TOTAL EMBODIED CARBON <span id="module-label">A1–A3</span></p><div class="total-number"><span id="total-carbon">—</span><small>kg CO₂e</small></div><div class="total-foot"><span id="coverage">—</span><span class="estimate-tag">ESTIMATES INCLUDED</span></div></div>
+        <div class="hotspot-card card"><div class="panel-heading compact"><div><p class="eyebrow">HOTSPOT EXPLORER</p><h2>Top 10 members</h2></div><span class="rank-label">RANK / VALUE</span></div><div id="hotspot-list" class="hotspot-list"><div class="empty">Waiting for model data…</div></div><div class="hotspot-foot">CLICK A ROW TO LOCATE MEMBER</div></div>
+      </aside>
+    </section>
+
+    <section class="stats-row">
+      <div class="stat card"><p class="eyebrow">INVENTORY</p><strong id="inventory-count">—</strong><span>unique structural members</span></div>
+      <div class="stat card"><p class="eyebrow">CALCULATED</p><strong id="calculated-count">—</strong><span>members with selected module</span></div>
+      <div class="stat card"><p class="eyebrow">ESTIMATED</p><strong id="estimated-count">—</strong><span>rounded or nominal quantities</span></div>
+      <div class="stat card"><p class="eyebrow">UNAVAILABLE</p><strong id="unavailable-count">—</strong><span>missing required data</span></div>
+    </section>
+    <section class="notice" id="notice"><span class="notice-mark">i</span><span>Member quantities from Stage 3 are rounded estimates. RD 12 rod volumes use nominal 12 mm diameter and recorded member length. Missing modules are excluded, not treated as zero.</span><span id="source-note" class="source-note">ACTUAL RHINO 3DM · ÖKOBAUDAT LIVE</span></section>
+    <footer><span>STOCKERAU PAVILION CARBON INVENTORY</span><span>DATA: STAGES 1–4 · ÖKOBAUDAT API</span><span>UNIVERSITY OF INNSBRUCK</span></footer>
+  </main>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
