@@ -30,8 +30,8 @@
 
     <section class="dashboard-grid">
       <div class="model-panel card">
-        <div class="panel-heading"><div><p class="eyebrow">STRUCTURAL MODEL</p><h2>Carbon distribution</h2></div><div class="model-actions"><button id="fit-view" class="mini-button">FIT MODEL</button><button id="reset-view" class="mini-button">RESET</button></div></div>
-        <div class="canvas-wrap" id="canvas-wrap"><canvas id="model-canvas"></canvas><div class="canvas-label">RHINO Z-UP · RIGHT-DRAG ORBIT <span>·</span> SHIFT + RIGHT-DRAG PAN <span>·</span> WHEEL ZOOM <span>·</span> ⌘ + RIGHT-DRAG ZOOM <span>·</span> CLICK SELECT</div><div id="tooltip" class="tooltip hidden"></div><div id="loading" class="loading">Loading Rhino model…</div></div>
+        <div class="panel-heading"><div><p class="eyebrow">STRUCTURAL MODEL</p><h2>Carbon distribution</h2></div><div class="model-actions"><div class="segmented display-mode" role="group" aria-label="Model display mode"><button class="seg active" data-display="shaded">SHADED</button><button class="seg" data-display="wireframe">WIREFRAME</button></div><button id="fit-view" class="mini-button">FIT MODEL</button><button id="reset-view" class="mini-button">RESET</button></div></div>
+        <div class="canvas-wrap" id="canvas-wrap"><canvas id="model-canvas"></canvas><div id="mesh-warning" class="mesh-warning">APPROXIMATE SECTION RECONSTRUCTION — not an exact Rhino Brep tessellation.</div><div class="canvas-label">RHINO Z-UP · RIGHT-DRAG ORBIT · SHIFT + RIGHT-DRAG PAN · WHEEL ZOOM · ⌘ + RIGHT-DRAG ZOOM · CLICK SELECT · SHADED GEOMETRY APPROXIMATE</div><div id="tooltip" class="tooltip hidden"></div><div id="loading" class="loading">Loading Rhino model…</div></div>
         <div class="legend-row"><div class="legend-title">KG CO₂e / MEMBER</div><div class="gradient"><span>LOW</span><div class="gradient-bar"></div><span>HIGH</span></div><span id="model-count" class="model-count">— MEMBERS</span></div>
       </div>
 

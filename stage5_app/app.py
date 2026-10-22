@@ -26,6 +26,7 @@ PROJECT_ROOT = ROOT.parent
 STATIC_DIR = ROOT / "static"
 RUNTIME_DATA_DIR = Path(os.getenv("STOCKERAU_DATA_DIR", str(PROJECT_ROOT / "data"))).resolve()
 MODEL_PATH = RUNTIME_DATA_DIR / "Stockerau Rhino Export from RFEM.3dm"
+MESH_EXPORT_PATH = RUNTIME_DATA_DIR / "stockerau_brep_render_meshes.json"
 MATERIALS_CSV = RUNTIME_DATA_DIR / "material_assignment_detailed.csv"
 CARBON_CSV = RUNTIME_DATA_DIR / "stage4_carbon_results.csv"
 API_RESPONSE_DIR = RUNTIME_DATA_DIR / "api_responses"
@@ -69,12 +70,16 @@ def safe_number(value: Any) -> float | None:
 def model_member_geometry() -> tuple[list[dict[str, Any]], dict[str, list[dict[str, float]]]]:
     """Read the original 3DM and extract only RFEM Members/MemberAxes objects.
 
-    Geometry is exported as vertices/edges from actual Rhino Breps and curves.
+    Geometry is exported as actual Rhino Brep boundaries and curves. Cross-section
+    metadata is joined by BeamId for the browser's explicitly approximate solid
+    reconstruction where the Rhino Brep itself cannot be tessellated.
     Member duplicates across Brep/axis representations are retained only once
     by BeamId for display, preferring the Brep representation.
     """
     with _geometry_lock:
-        if MODEL_PATH.exists() and _geometry_cache.get("mtime") == MODEL_PATH.stat().st_mtime:
+        metadata_mtime = MATERIALS_CSV.stat().st_mtime if MATERIALS_CSV.exists() else None
+        if (MODEL_PATH.exists() and _geometry_cache.get("mtime") == MODEL_PATH.stat().st_mtime
+                and _geometry_cache.get("metadata_mtime") == metadata_mtime):
             return _geometry_cache["geometry"], _geometry_cache["points"]
     if not MODEL_PATH.exists():
         raise RuntimeError("Stockerau source model is not available in this deployment runtime")
@@ -97,6 +102,7 @@ def model_member_geometry() -> tuple[list[dict[str, Any]], dict[str, list[dict[s
     chosen: dict[str, dict[str, Any]] = {}
     foundation_bounds: list[list[float]] = []
     foundation_object_count = 0
+    axis_by_id: dict[str, dict[str, Any]] = {}
     for obj in model.Objects:
         attrs = obj.Attributes
         in_members = is_under(attrs.LayerIndex, "Members")
@@ -153,6 +159,14 @@ def model_member_geometry() -> tuple[list[dict[str, Any]], dict[str, list[dict[s
             "points": [list(p) for p in points],
             "edges": [list(e) for e in edges],
             "triangles": triangles,
+            "normals": [],
+            "mesh_vertices": [],
+            "mesh_triangles": [],
+            "mesh_normals": [],
+            "axis_start": None,
+            "axis_end": None,
+            "section_orientation": None,
+            "rotation_deg": safe_number(user.get("BG_RFEM_Exchange_RotAngle_bg0248")),
             "bounds": [[box.Min.X, box.Min.Y, box.Min.Z], [box.Max.X, box.Max.Y, box.Max.Z]],
             "brep_solid": bool(getattr(geom, "IsSolid", False)) if representation == "brep" else False,
         }
@@ -160,7 +174,69 @@ def model_member_geometry() -> tuple[list[dict[str, Any]], dict[str, list[dict[s
         if current is None or priority > current["priority"]:
             chosen[beam_id] = row
 
+    # Pair each displayed BeamId with its actual RFEM MemberAxes curve, but do
+    # not replace the endpoint/face-boundary Brep display with that curve.
+    for obj in model.Objects:
+        attrs = obj.Attributes
+        if not is_under(attrs.LayerIndex, "MemberAxes") or not isinstance(obj.Geometry, rhino3dm.Curve):
+            continue
+        user = dict(attrs.GetUserStrings() or ())
+        beam_id = str(user.get("BG_RFEM_Exchange_BeamId_bg0246", "")).strip()
+        if beam_id not in chosen:
+            continue
+        curve = obj.Geometry
+        start = curve.PointAtStart
+        end = curve.PointAtEnd
+        tangent = curve.TangentAtStart
+        tangent_length = math.sqrt(tangent.X * tangent.X + tangent.Y * tangent.Y + tangent.Z * tangent.Z)
+        axis_by_id[beam_id] = {
+            "start": [start.X, start.Y, start.Z],
+            "end": [end.X, end.Y, end.Z],
+            "orientation": [tangent.X / tangent_length, tangent.Y / tangent_length, tangent.Z / tangent_length] if tangent_length > 1e-12 else None,
+        }
+
     result = list(chosen.values())
+    section_metadata = {}
+    for row in csv_rows(MATERIALS_CSV):
+        beam_id = row.get("BeamId", "").strip()
+        if beam_id:
+            section_metadata[beam_id] = row
+    for member in result:
+        assignment = section_metadata.get(member["beam_id"], {})
+        member["profile"] = assignment.get("Profile", member["profile"])
+        member["profile_end"] = assignment.get("Profile_End", member["profile"])
+        member["rotation_deg"] = safe_number(assignment.get("Rotation"))
+        member["cross_section_area_mm2"] = safe_number(assignment.get("CS_Area_mm2"))
+        member["length_m"] = safe_number(assignment.get("Length_m"))
+        member["volume_m3"] = safe_number(assignment.get("Volume_m3"))
+        axis_data = axis_by_id.get(member["beam_id"])
+        if member["representation"] == "axis" and axis_data:
+            member["axis_start"] = axis_data["start"]
+            member["axis_end"] = axis_data["end"]
+            member["section_orientation"] = axis_data["orientation"]
+        elif member["representation"] == "brep":
+            # The Brep's actual oriented bounding-box major axis provides the
+            # closest available member axis without flattening it to a generic
+            # world-aligned bounding proxy.
+            corners = [point for point in member["points"] if len(point) == 3]
+            if len(corners) >= 2:
+                lo = [min(p[i] for p in corners) for i in range(3)]
+                hi = [max(p[i] for p in corners) for i in range(3)]
+                spans = [hi[i] - lo[i] for i in range(3)]
+                major = max(range(3), key=lambda i: spans[i])
+                start = [sum(p[i] for p in corners) / len(corners) for i in range(3)]
+                end = list(start)
+                start[major] -= spans[major] / 2
+                end[major] += spans[major] / 2
+                member["axis_start"] = start
+                member["axis_end"] = end
+                candidate = [0.0, 0.0, 1.0] if major != 2 else [0.0, 1.0, 0.0]
+                member["section_orientation"] = candidate
+        # Convert backend units to the meters used by Stage 3/4 quantities and
+        # by the browser. Rhino file model units are meters for this project.
+        if member["representation"] == "axis" and member.get("axis_start") and member.get("axis_end"):
+            member["points"] = [member["axis_start"], member["axis_end"]]
+            member["edges"] = [[0, 1]]
     bounds_all = [point for member in result for point in member["points"]]
     z_base = min((point[2] for point in bounds_all), default=0.0)
     actual_foundation_z = min((box[2] for box in foundation_bounds), default=None)
@@ -173,7 +249,8 @@ def model_member_geometry() -> tuple[list[dict[str, Any]], dict[str, list[dict[s
     }
     point_map = {k: v["points"] for k, v in chosen.items()}
     with _geometry_lock:
-        _geometry_cache.update({"mtime": MODEL_PATH.stat().st_mtime, "geometry": result, "points": point_map,
+        _geometry_cache.update({"mtime": MODEL_PATH.stat().st_mtime, "metadata_mtime": metadata_mtime,
+                                "geometry": result, "points": point_map,
                                 "ground_info": ground_info})
     return result, point_map
 
@@ -241,12 +318,12 @@ def read_project_data() -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]
 
 
 def verified_ssl_context() -> ssl.SSLContext:
-    """Reuse Stage 4's secure macOS CA handling if available; always verify TLS."""
+    """Reuse Stage 4's secure CA handling; fallback to OS defaults with verification."""
     try:
         sys.path.insert(0, str(PROJECT_ROOT / "stage4_independent"))
         import stage4_calculate
         return stage4_calculate.create_verified_ssl_context()
-    except (ImportError, AttributeError):
+    except (ImportError, AttributeError, FileNotFoundError, OSError):
         context = ssl.create_default_context()
         context.check_hostname = True
         context.verify_mode = ssl.CERT_REQUIRED
@@ -310,6 +387,22 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/mesh-export/status")
+def mesh_export_status() -> dict[str, Any]:
+    """Status for the RhinoCommon-render-mesh export expected by Shaded mode."""
+    if not MESH_EXPORT_PATH.exists():
+        return {"ready": False, "path": str(MESH_EXPORT_PATH), "brep_meshes": 0, "expected_breps": 561,
+                "message": "Run export_rhino_meshes.py inside Rhino 8 ScriptEditor, then reload the app."}
+    try:
+        data = json.loads(MESH_EXPORT_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"ready": False, "brep_meshes": 0, "expected_breps": 561, "message": f"Mesh export is invalid: {exc}"}
+    rows = data.get("members", [])
+    return {"ready": len(rows) == 561 and not data.get("brep_failed"), "brep_meshes": len(rows),
+            "expected_breps": 561, "failed_ids": data.get("brep_failed", []),
+            "mesh_quality": data.get("meshing"), "source": data.get("source")}
+
+
 @app.get("/api/model")
 def api_model() -> dict[str, Any]:
     members, _ = read_project_data()
@@ -338,6 +431,63 @@ def api_model() -> dict[str, Any]:
         item["carbon"] = row
         if row:
             row["model_representation"] = item["representation"]
+    mesh_export = None
+    mesh_export_error = None
+    if MESH_EXPORT_PATH.exists():
+        try:
+            mesh_export = json.loads(MESH_EXPORT_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            mesh_export_error = "Mesh export JSON could not be read. Re-run the Rhino 8 exporter."
+        if mesh_export and mesh_export.get("schema_version") != 1:
+            mesh_export = None
+            mesh_export_error = "Mesh export schema/version is incompatible. Re-run the Rhino 8 exporter."
+    if mesh_export:
+        mesh_by_id = {str(item.get("beam_id")): item for item in mesh_export.get("members", [])}
+        for item in geometry:
+            if item["representation"] != "brep":
+                continue
+            mesh = mesh_by_id.get(str(item["beam_id"]))
+            if not mesh:
+                continue
+            if str(mesh.get("guid", "")).lower() != item["guid"].lower():
+                continue
+            vertices = mesh.get("vertices", [])
+            triangles = mesh.get("triangles", [])
+            normals = mesh.get("normals", [])
+            valid = bool(vertices and triangles and len(normals) == len(vertices))
+            valid = valid and all(len(face) == 3 and all(isinstance(i, int) and 0 <= i < len(vertices) for i in face) for face in triangles)
+            if not valid:
+                continue
+            item["mesh_vertices"] = vertices
+            item["mesh_triangles"] = triangles
+            item["mesh_normals"] = normals
+            item["mesh_source"] = mesh.get("geometry_type", "RhinoCommon")
+        for item in mesh_export.get("approximate_members", []):
+            beam_id = str(item.get("beam_id", ""))
+            source = next((member for member in geometry if member["beam_id"] == beam_id and member["representation"] == "axis"), None)
+            if source is None:
+                continue
+            vertices = item.get("vertices", [])
+            triangles = item.get("triangles", [])
+            normals = item.get("normals", [])
+            valid = bool(vertices and triangles and len(normals) == len(vertices))
+            valid = valid and all(len(face) == 3 and all(isinstance(i, int) and 0 <= i < len(vertices) for i in face) for face in triangles)
+            if not valid:
+                continue
+            source["mesh_vertices"] = vertices
+            source["mesh_triangles"] = triangles
+            source["mesh_normals"] = normals
+            source["mesh_source"] = "approximate_rd12_nominal_12mm"
+            source["geometry_approximate"] = True
+    for item in geometry:
+        item["procedural_geometry_approximate"] = not bool(item.get("mesh_triangles"))
+    brep_count = sum(1 for item in geometry if item["representation"] == "brep")
+    axis_count = sum(1 for item in geometry if item["representation"] == "axis")
+    rd12_axis_count = sum(1 for item in geometry if item["representation"] == "axis" and "rd 12" in str(item.get("profile", "")).lower())
+    shaded_brep_count = sum(1 for item in geometry if item["representation"] == "brep" and item.get("mesh_triangles"))
+    ready_count = sum(1 for item in geometry if item.get("mesh_triangles") or (item.get("axis_start") and item.get("axis_end")))
+    procedural_count = sum(1 for item in geometry if item.get("axis_start") and item.get("axis_end"))
+    approximate_count = sum(1 for item in geometry if item.get("geometry_approximate") or item.get("procedural_geometry_approximate"))
     return {
         "model_name": MODEL_PATH.name,
         "units": "m",
@@ -345,10 +495,18 @@ def api_model() -> dict[str, Any]:
         "rhino_representation_member_count": len(geometry),
         "geometry_matched_count": sum(1 for item in geometry if item.get("carbon")),
         "geometry_only_count": sum(1 for item in geometry if not item.get("carbon")),
-        "brep_count": sum(1 for item in geometry if item["representation"] == "brep"),
-        "axis_only_count": sum(1 for item in geometry if item["representation"] == "axis"),
+        "brep_count": brep_count,
+        "axis_only_count": axis_count,
+        "rd12_axis_count": rd12_axis_count,
         "world_up_axis": "Z",
         "ground": ground_info,
+        "shaded_mesh_ready_count": ready_count,
+        "shaded_mesh_export_present": bool(mesh_export),
+        "shaded_mesh_brep_count": shaded_brep_count,
+        "procedural_shaded_count": procedural_count,
+        "procedural_geometry_note": "Approximate section-based solids use actual BeamId-matched MemberAxes endpoints and section orientation for axis members, or actual Brep vertex extents as an axis fallback, combined with cross-section metadata; they are not exact Brep surface tessellations.",
+        "approximate_mesh_count": approximate_count,
+        "shaded_mesh_export_error": mesh_export_error,
         "members": geometry,
     }
 
