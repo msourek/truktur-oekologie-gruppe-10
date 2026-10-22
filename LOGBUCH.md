@@ -57,12 +57,58 @@ Furthermore, we have learned that it is important to provide the AI ​​with t
 **Insight or Notable Detail:** The data obtained in this stage, together with the volumes calculated in previous stage, will allow us to provide data to the IA agent to estimate the CO2 emissions
 
 
-## Etappe 4: Embodied Carbon aus der ÖKOBAUDAT
+## Stage 4: Embodied Carbon from the ÖKOBAUDAT Database
 
-**Test:** Rechnet einen Stab von seiner Länge bis zu kg CO₂e (A1–A3) von Hand nach.
+**Test:** Manually calculate the embodied carbon (A1–A3) for a structural member, starting from its length and converting it into kg CO₂e: 
+We have calculated manually the Kg CO2e (A1 - A3 for a Flat bar 237.5/12), whose volumen is 0.00101943812 m3 and it is made of Steel (density = 7850 kg/m3). 
+According to the Dataset the GWP-total (A1-A3) is 560.3 so, applying the conversion factor to 1kg: 0.001, the result is that the value of the Kg C02e is 4.4838507522926 (value obtained by the AI model: 
+4.481823078009356).
+
+       0.00101943812*7850*560.3*0.001= 4.4838507522926
 
 
-**Learning oder Besonderheit:**
+**Prompt:** We are starting *Stage 4 – Embodied Carbon from ÖKOBAUDAT* of our Stockerau Pavilion Carbon Inventory project at the University of Innsbruck.
+IMPORTANT: START FROM SCRATCH.
+My teammate is working separately on Stage 4. Ignore all existing Stage 4 scripts, calculations, and outputs. Do not inspect or modify them.
+Build my own independent Stage 4 implementation in a new folder called stage4_independent/
+Connect directly to the public ÖKOBAUDAT API:
+https://oekobaudat.de/OEKOBAU.DAT/resource/processes/<UUID>?format=json&view=extended
+Use the environmental indicator *GWP-total*.
+Retrieve the following datasets:
+*Structural steel:*
+- Default – Baustahl: Profile und Stabstahl
+  20c29cbd-f9a2-4518-a1ce-c681246c29c8
+- Alternative – Baustahl: Grobblech
+  04d1311a-ae38-4bfb-8e11-8992f1ddb14f
+*Concrete:*
+- Default – Beton C25/30
+  8347f9a7-f4ec-4a36-a266-a0281f5fd16d
+- Alternative – Beton C25/30 EcoPact
+  69dc12cf-ce4d-4251-8ea3-330ed72f2f79
+*Reinforcing steel:*
+- Betonstahl in Stäben
+  a8ebf8f2-2fcc-4431-b730-93bf5efd8111
+For foundation reinforcement, assume *85 kg of reinforcing steel per m³ of concrete*, as specified by our teacher.
+Fetch real values from the API. Do not invent emission factors.
+Before calculating anything:
+1. Retrieve the actual JSON responses.
+2. Identify GWP-total and the values for life-cycle modules A1–A3, C1–C4, and D.
+3. Determine the declared unit and reference quantity of each dataset.
+4. Explain how the dataset units relate to our model quantities.
+5. Report missing or unavailable information clearly.
+Be especially careful with kg versus m³ and with the signs of module D.
+Calculate embodied carbon for every structural member with sufficient verified data.
+For each member:
+1. Identify its BeamId.
+2. Read its material assignment.
+3. Read its volume or other available material quantity.
+4. Convert that quantity to the dataset's declared unit, using verified density information where necessary.
+5. Multiply by the corresponding GWP-total factors.
+6. Calculate kg CO₂e separately for A1–A3, C1, C2, C3, C4, and D.
+7. Calculate combined results for A1–A3 and C where all necessary module data exists.
+
+
+**Key Insight or Notable Feature:** The implementation uses the GWP-total indicator and distinguishes between life-cycle modules A1–A3, C1–C4, and D. A challenge is ensuring that the declared units of the datasets match the quantities extracted from the Rhino model, requiring careful unit conversions where necessary.
 
 
 ## Etappe 5: Web-App
