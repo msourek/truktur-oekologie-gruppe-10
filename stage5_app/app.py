@@ -264,39 +264,10 @@ def api_factor(dataset_key: str, module: str) -> float | None:
             data = json.loads(response.read())
     except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=502, detail=f"Live ÖKOBAUDAT request failed for {config['uuid']}: {exc}") from exc
-
-    if data.get("processInformation", {}).get("dataSetInformation", {}).get("UUID") != config["uuid"]:
-        raise HTTPException(status_code=502, detail=f"ÖKOBAUDAT returned unexpected UUID for {config['uuid']}")
-
-    # Normalize from that dataset's reference flow, not a hard-coded assumption.
-    process = data["processInformation"]
-    ref_ids = process["quantitativeReference"]["referenceToReferenceFlow"]
-    ref_exchange = next((e for e in data["exchanges"]["exchange"] if e.get("referenceFlow") and e.get("dataSetInternalID") in ref_ids), None)
-    prop = next((p for p in (ref_exchange or {}).get("flowProperties", []) if p.get("referenceFlowProperty")), None)
-    if not prop or not prop.get("meanValue"):
-        raise HTTPException(status_code=502, detail=f"ÖKOBAUDAT reference unit unavailable for {config['uuid']}")
-    normalization = float(prop["meanValue"])
-    lcia = next((r for r in data.get("LCIAResults", {}).get("LCIAResult", []) if any("GWP-total" in x.get("value", "") for x in r.get("referenceToLCIAMethodDataSet", {}).get("shortDescription", []))), None)
-    if not lcia:
-        raise HTTPException(status_code=502, detail=f"GWP-total result missing for {config['uuid']}")
-    entries = [x for x in lcia.get("other", {}).get("anies", []) if isinstance(x, dict) and x.get("module")]
-    scenario = {"steel_default":"S3", "steel_alternative":"S3", "concrete_alternative":"Recycled", "rebar":"Standard Szenario"}.get(dataset_key, "")
-    if module in ("C3", "C4", "D") and dataset_key in ("steel_default", "steel_alternative"):
-        scenarios = {x.get("scenario") for x in entries if x.get("module") == module and x.get("scenario")}
-        defaults = [x for x in data.get("processInformation", {}).get("dataSetInformation", {}).get("other", {}).get("anies", [])
-                    if isinstance(x, dict) and isinstance(x.get("scenario"), list)]
-        is_default_s3 = any(any(scenario_item.get("name") == "S3" and scenario_item.get("default") for scenario_item in default_block.get("scenario", [])) for default_block in defaults)
-        if scenario not in scenarios or not is_default_s3:
-            raise HTTPException(status_code=502, detail=f"Required default scenario {scenario} missing for {dataset_key} module {module}")
-    if module == "A1-A3" and dataset_key == "rebar":
-        vals = [next((x for x in entries if x.get("module")==part and x.get("scenario")==scenario and x.get("value") is not None), None) for part in ("A1","A2","A3")]
-        return sum(float(x["value"]) for x in vals)/normalization if all(vals) else None
-    chosen = [x for x in entries if x.get("module")==module and (not scenario or not x.get("scenario") or x.get("scenario")==scenario)]
-    if len(chosen)!=1 or chosen[0].get("value") is None:
-        if dataset_key == "concrete_default" and module == "C4":
-            return None
-        raise HTTPException(status_code=502, detail=f"Required GWP-total module {module} missing or ambiguous for {dataset_key}")
-    return float(chosen[0]["value"])/normalization
+    try:
+        return api_factor_from_document(data, dataset_key, module)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail=f"Invalid ÖKOBAUDAT response for {dataset_key} {module}: {exc}") from exc
 
 
 @app.get("/")
@@ -354,12 +325,74 @@ def api_model() -> dict[str, Any]:
 
 
 @app.get("/api/factors")
-def api_factors(refresh: bool = True) -> dict[str, Any]:
+def api_factors() -> dict[str, Any]:
     output: dict[str, Any] = {key: {} for key in DATASETS}
     for key in DATASETS:
         for module in ("A1-A3", "C1", "C2", "C3", "C4", "D"):
             output[key][module] = api_factor(key, module)
     return {"factors": output, "live": True, "source": "ÖKOBAUDAT public process API"}
+
+
+@app.get("/api/factors/cached")
+def api_factors_cached() -> dict[str, Any]:
+    """Serve validated ÖKOBAUDAT response snapshots for offline startup."""
+    output: dict[str, dict[str, float | None]] = {key: {} for key in DATASETS}
+    for key, config in DATASETS.items():
+        snapshot = API_RESPONSE_DIR / f"{config['uuid']}.json"
+        if not snapshot.exists():
+            raise HTTPException(status_code=503, detail=f"ÖKOBAUDAT snapshot unavailable for {key}")
+        try:
+            document = json.loads(snapshot.read_text(encoding="utf-8"))
+            for module in ("A1-A3", "C1", "C2", "C3", "C4", "D"):
+                output[key][module] = api_factor_from_document(document, key, module)
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=502, detail=f"Could not validate ÖKOBAUDAT snapshot for {key}: {exc}") from exc
+    return {"factors": output, "live": False, "source": "ÖKOBAUDAT snapshots from Stage 4"}
+
+
+def api_factor_from_document(data: dict[str, Any], dataset_key: str, module: str) -> float | None:
+    """Extract and normalize the requested GWP-total module from a process JSON."""
+    config = DATASETS[dataset_key]
+    if data.get("processInformation", {}).get("dataSetInformation", {}).get("UUID") != config["uuid"]:
+        raise ValueError(f"Unexpected dataset UUID for {dataset_key}")
+    process = data["processInformation"]
+    reference_ids = process["quantitativeReference"]["referenceToReferenceFlow"]
+    reference = next((exchange for exchange in data["exchanges"]["exchange"]
+                      if exchange.get("referenceFlow") and exchange.get("dataSetInternalID") in reference_ids), None)
+    flow_property = next((prop for prop in (reference or {}).get("flowProperties", [])
+                          if prop.get("referenceFlowProperty")), None)
+    if not flow_property or not flow_property.get("meanValue"):
+        raise ValueError(f"Reference unit missing for {dataset_key}")
+    normalization = float(flow_property["meanValue"])
+    lcia = next((result for result in data.get("LCIAResults", {}).get("LCIAResult", [])
+                 if any("GWP-total" in item.get("value", "")
+                        for item in result.get("referenceToLCIAMethodDataSet", {}).get("shortDescription", []))), None)
+    if not lcia:
+        raise ValueError(f"GWP-total result missing for {dataset_key}")
+    entries = [item for item in lcia.get("other", {}).get("anies", [])
+               if isinstance(item, dict) and item.get("module")]
+    scenario = {"steel_default": "S3", "steel_alternative": "S3",
+                "concrete_alternative": "Recycled", "rebar": "Standard Szenario"}.get(dataset_key, "")
+    if module in ("C3", "C4", "D") and dataset_key in ("steel_default", "steel_alternative"):
+        scenarios = {item.get("scenario") for item in entries if item.get("module") == module and item.get("scenario")}
+        defaults = [item for item in process.get("dataSetInformation", {}).get("other", {}).get("anies", [])
+                    if isinstance(item, dict) and isinstance(item.get("scenario"), list)]
+        default_s3 = any(any(option.get("name") == "S3" and option.get("default")
+                             for option in block["scenario"]) for block in defaults)
+        if scenario not in scenarios or not default_s3:
+            raise ValueError(f"Default S3 scenario missing for {dataset_key} {module}")
+    if module == "A1-A3" and dataset_key == "rebar":
+        parts = [next((item for item in entries if item.get("module") == name
+                       and item.get("scenario") == scenario and item.get("value") is not None), None)
+                 for name in ("A1", "A2", "A3")]
+        return sum(float(item["value"]) for item in parts) / normalization if all(parts) else None
+    chosen = [item for item in entries if item.get("module") == module
+              and (not scenario or not item.get("scenario") or item.get("scenario") == scenario)]
+    if len(chosen) != 1 or chosen[0].get("value") is None:
+        if dataset_key == "concrete_default" and module == "C4":
+            return None
+        raise ValueError(f"{module} missing or ambiguous for {dataset_key}")
+    return float(chosen[0]["value"]) / normalization
 
 
 @app.get("/api/summary")

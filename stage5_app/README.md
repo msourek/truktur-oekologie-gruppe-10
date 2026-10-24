@@ -20,7 +20,7 @@ The backend reads the original Rhino 3DM model, Stage 3 BeamId/material assignme
 - Geometries are selected/deduplicated by BeamId found in Rhino user text. No row-order or profile-only joins are used.
 - The available 3DM exposes 561 Brep-backed members and 175 axis-only rods, with all 736 BeamIds represented. Carbon values use the same BeamId from Stage 4.
 - Current Stage 4 quantities are estimates: rounded Stage 3 volumes for 561 Brep members and nominal 12 mm diameter × length estimates for 175 rods. The UI labels this.
-- The Python `rhino3dm` package can read the Breps but does not expose Brep meshing in this environment, so the model is drawn from actual Brep boundary edges and actual member-axis polylines. It is not fabricated or substituted geometry.
+- The Python `rhino3dm` package can read the Breps but does not expose trimmed Brep meshing in this environment. Wireframe displays actual Brep boundary edges and member-axis polylines; Shaded uses approximate member-section geometry and is clearly labelled as reconstructed.
 - The default concrete dataset has no numeric C4 factor. For the combined C option, members with any missing C1–C4 factor are not included in the combined total and appear as uncalculated for that module. Missing values are not assumed zero.
 
 ## Controls
@@ -29,6 +29,10 @@ The backend reads the original Rhino 3DM model, Stage 3 BeamId/material assignme
 - Concrete: default C25/30 or EcoPact.
 - Lifecycle: A1–A3, combined C1–C4, or D.
 - Right-drag: orbit; Shift + right-drag: pan; wheel/two-finger scroll: zoom; Command + right-drag: zoom. Left-click a member to select it. On a trackpad, click-drag empty space to orbit. Fit Model fits all geometry; Reset restores the initial full model view.
+
+## Shaded geometry
+
+Shaded is an explicitly approximate visualization reconstructed from the actual member axes and BeamId-matched section assignments. Wireframe remains available for inspecting the original Brep edges. The reconstruction does not claim to reproduce exact trimmed Brep faces.
 
 ## Render deployment preparation
 

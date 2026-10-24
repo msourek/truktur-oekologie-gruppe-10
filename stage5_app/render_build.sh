@@ -5,7 +5,7 @@ set -euo pipefail
 # inputs that the application needs. The source Rhino 3DM is intentionally not
 # copied into the runtime bundle and has no public route.
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DATA_DIR="${ROOT_DIR}/.render_data"
+DATA_DIR="${STOCKERAU_DATA_DIR:-${ROOT_DIR}/.render_data}"
 
 # The current 3D endpoint reads the original 3DM at runtime. It is copied into
 # the private Render runtime only after an explicit setting; the repository remains private.
